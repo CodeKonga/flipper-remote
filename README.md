@@ -3,6 +3,8 @@
 Use your Flipper Zero's saved files from a Steam Deck, over Bluetooth: Sub-GHz signals,
 Infrared remotes, 125 kHz RFID keys, NFC cards and iButton keys. Tap to send or emulate, hold to keep sending.
 
+![The desktop app with five pinned buttons: Fan On, Fan Off, Fan High, Light On and Light Off](screenshots/desktop-app.png)
+
 It comes in two parts. Use either one, or both:
 
 | | What it is | Where you use it |
