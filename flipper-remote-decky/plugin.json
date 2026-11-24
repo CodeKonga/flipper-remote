@@ -1,0 +1,11 @@
+{
+  "name": "Flipper Remote",
+  "author": "CodeKonga",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["flipper-zero", "remote", "bluetooth"],
+    "description": "Send your Flipper Zero's saved Sub-GHz, Infrared, RFID, NFC and iButton files from the Quick Access Menu.",
+    "image": ""
+  }
+}

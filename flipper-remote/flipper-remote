@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Flipper Remote launcher. Passes any arguments through, e.g.  flipper-remote send Ceiling_Fan/Fan_Off
+DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+
+PY="$(command -v python3 || command -v python || true)"
+if [ -z "$PY" ] || ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' 2>/dev/null; then
+  msg="Flipper Remote needs Python 3.8 or newer, which wasn't found on this system."
+  if [ -t 2 ]; then echo "$msg" >&2
+  elif command -v kdialog >/dev/null; then kdialog --title "Flipper Remote" --error "$msg"
+  elif command -v zenity >/dev/null; then zenity --error --title "Flipper Remote" --text "$msg"
+  else echo "$msg" >&2; fi
+  exit 1
+fi
+
+exec "$PY" "$DIR/flipper_remote.py" "$@"

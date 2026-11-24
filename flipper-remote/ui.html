@@ -1,0 +1,1525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flipper Remote</title>
+<link rel="icon" href="/icon.svg">
+<style>
+  :root {
+    --lcd: #ff8f1f;           /* backlight */
+    --ink: #000000;           /* lit pixel */
+    --key-shadow: 5px;
+    --radius: 10px;
+    --font: "Noto Sans", "Cantarell", "DejaVu Sans", "Liberation Sans", Arial, sans-serif;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --lcd: #000000;
+    --ink: #ff8f1f;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--lcd);
+    color: var(--ink);
+    font: 500 16px/1.4 var(--font);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  button { font: inherit; color: inherit; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  :focus-visible { outline: 3px dashed var(--ink); outline-offset: 3px; }
+
+  /* ---------- title bar: inverted, like a Flipper menu header ---------- */
+  .bar {
+    background: var(--ink);
+    color: var(--lcd);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 20px;
+    min-height: 64px;
+    position: sticky; top: 0; z-index: 5;
+    flex-wrap: wrap;
+    flex: none;   /* never squeezed when the window is shorter than the page */
+  }
+  .bar h1 { margin: 0; line-height: 0; flex: 1 1 auto; }
+  .bar .device { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 650; white-space: nowrap; }
+  .bar .device .name { max-width: 30vw; overflow: hidden; text-overflow: ellipsis; }
+  .bar button {
+    background: transparent;
+    border: 2px solid var(--lcd);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-weight: 700;
+    cursor: pointer;
+    min-height: 44px;
+  }
+  .bar button:active { background: var(--lcd); color: var(--ink); }
+  .bar button:disabled { opacity: .55; cursor: default; }
+  .bar :focus-visible { outline-color: var(--lcd); }
+  .cursor { display: inline-block; width: .6em; height: 1em; background: currentColor; vertical-align: -0.15em;
+            animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  svg.glyph { width: 28px; height: 18px; fill: currentColor; shape-rendering: crispEdges; flex: none; }
+
+  canvas.pixel { display: block; image-rendering: pixelated; }
+  canvas.pixel[hidden] { display: none; }
+  .plain { display: inline-block; line-height: 1.1; font-weight: 800; font-stretch: 87.5%; font-size: 21px; }
+  .bar h1 .plain { font-size: 32px; }
+
+  /* ---------- content ---------- */
+  main { flex: 1 0 auto; width: 100%; max-width: 1240px; margin: 0 auto; padding: 18px 20px 28px; }
+  section + section { margin-top: 26px; }
+  .head { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; min-height: 44px; }
+  .head h2 { margin: 0; line-height: 0; }
+  .head .spacer { flex: 1; }
+  .crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .crumbs button, .tool {
+    background: transparent; border: 0; border-radius: 6px; padding: 8px 10px; min-height: 44px;
+    font-weight: 700; font-size: 18px; cursor: pointer;
+  }
+  .crumbs button[aria-current="page"] { cursor: default; }
+  .crumbs .sep { font-weight: 700; padding: 0 2px; }
+  .tool { font-size: 16px; display: inline-flex; align-items: center; gap: 8px; border: 2px solid var(--ink); }
+  .tool:active { background: var(--ink); color: var(--lcd); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px 18px; }
+
+  /* signal keys: raised, with a hard pixel shadow */
+  .key {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    min-height: 96px;
+    border: 3px solid var(--ink);
+    border-radius: var(--radius);
+    background: var(--lcd);
+    box-shadow: var(--key-shadow) var(--key-shadow) 0 var(--ink);
+    margin: 0 var(--key-shadow) var(--key-shadow) 0;
+  }
+  .key .send {
+    flex: 1 1 auto;
+    display: flex; flex-direction: column; justify-content: center; gap: 4px;
+    text-align: left;
+    background: transparent; border: 0; border-radius: calc(var(--radius) - 3px);
+    padding: 12px 8px 12px 16px;
+    cursor: pointer;
+    touch-action: pan-y;
+    -webkit-touch-callout: none; user-select: none; -webkit-user-select: none;
+    min-width: 0;
+  }
+  .key .legend {
+    font-size: 22px; line-height: 1.15; font-weight: 800; font-stretch: 87.5%;
+    overflow-wrap: anywhere;
+  }
+  .key .meta { font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 8px; min-height: 21px; }
+  .key .pin {
+    flex: none; width: 56px; background: transparent; border: 0; border-left: 3px solid var(--ink);
+    border-radius: 0 calc(var(--radius) - 3px) calc(var(--radius) - 3px) 0;
+    cursor: pointer; display: grid; place-items: center;
+  }
+  .key .pin svg { width: 26px; height: 26px; fill: currentColor; shape-rendering: crispEdges; }
+  .key .pin:active { background: var(--ink); color: var(--lcd); }
+
+  /* pressed + transmitting = the key goes down and inverts, like the Flipper's selection bar */
+  .key.down, .key.busy {
+    transform: translate(var(--key-shadow), var(--key-shadow));
+    box-shadow: 0 0 0 var(--ink);
+    background: var(--ink); color: var(--lcd);
+  }
+  .key.down .pin, .key.busy .pin { border-left-color: var(--lcd); }
+  .key.waiting { background-image: conic-gradient(var(--ink) 25%, transparent 0 50%, var(--ink) 0 75%, transparent 0);
+                 background-size: 4px 4px; }
+  .key.waiting .send { background: var(--lcd); margin: 6px 0 6px 6px; border-radius: 6px; }
+  .key.failed { border-style: dashed; }
+  .waves { display: none; }
+  .key.sending .waves { display: inline-flex; }
+  .waves svg { width: 22px; height: 18px; fill: currentColor; shape-rendering: crispEdges; }
+  .waves .w1 { animation: wave 0.9s steps(1) infinite; }
+  .waves .w2 { animation: wave 0.9s steps(1) 0.3s infinite; }
+  .waves .w3 { animation: wave 0.9s steps(1) 0.6s infinite; }
+  @keyframes wave { 0% { opacity: 1; } 66% { opacity: 0; } }
+
+  /* folders: flat rows, they don't transmit */
+  .folder {
+    display: flex; align-items: center; gap: 14px;
+    min-height: 64px; padding: 10px 16px;
+    border: 3px solid var(--ink); border-radius: var(--radius);
+    background: transparent; text-align: left; cursor: pointer;
+    font-size: 20px; font-weight: 750; font-stretch: 87.5%;
+  }
+  .folder:active { background: var(--ink); color: var(--lcd); }
+  .folder svg { width: 30px; height: 24px; fill: currentColor; shape-rendering: crispEdges; flex: none; }
+  .folder .sub { display: block; font-size: 15px; font-weight: 600; opacity: .8; }
+
+  /* the "Show" menu: a native select (its list opens outside the window, so it's never cut off) */
+  .picker { position: relative; padding: 0; }
+  .picker select {
+    appearance: none; -webkit-appearance: none; background: transparent; color: inherit; border: 0; margin: 0;
+    font: inherit; font-weight: 700; padding: 8px 36px 8px 12px; min-height: 40px; cursor: pointer; border-radius: 4px;
+  }
+  .picker select:focus-visible { outline: none; }
+  .picker:focus-within { outline: 3px dashed var(--ink); outline-offset: 3px; }
+  .picker::after {
+    content: ""; position: absolute; right: 13px; top: 50%; margin-top: -3px; pointer-events: none;
+    border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 7px solid currentColor;
+  }
+  .picker option { background: var(--lcd); color: var(--ink); }
+
+  .note { font-size: 17px; max-width: 62ch; margin: 0; }
+  .panel {
+    border: 3px solid var(--ink); border-radius: var(--radius); padding: 16px 18px;
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+  }
+  .panel .note { flex: 1 1 320px; max-width: none; }
+  .panel button { flex: none; }
+  .panel button:first-of-type { margin-left: auto; }
+  .skeleton {
+    min-height: 96px; border-radius: var(--radius);
+    background-image: conic-gradient(var(--ink) 25%, transparent 0 50%, var(--ink) 0 75%, transparent 0);
+    background-size: 4px 4px; opacity: .35;
+  }
+
+  footer {
+    flex: none;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 12px 20px 16px; max-width: 1240px; width: 100%; margin: 0 auto; font-size: 15px;
+  }
+  footer .spacer { flex: 1; }
+  footer button { background: transparent; border: 2px solid var(--ink); border-radius: 8px; padding: 8px 12px;
+                  min-height: 44px; font-weight: 700; cursor: pointer; }
+
+  /* popup, like a Flipper dialog */
+  .popup {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    width: min(640px, calc(100% - 32px));
+    background: var(--lcd); border: 3px solid var(--ink); border-radius: var(--radius);
+    box-shadow: 6px 6px 0 var(--ink);
+    padding: 14px 14px 14px 18px; display: none; align-items: center; gap: 14px; z-index: 10;
+  }
+  .popup.show { display: flex; }
+  .popup p { margin: 0; flex: 1; font-size: 17px; }
+  .popup button { background: var(--ink); color: var(--lcd); border: 0; border-radius: 8px; padding: 10px 16px;
+                  font-weight: 700; min-height: 44px; cursor: pointer; }
+
+  .gone { position: fixed; inset: 0; background: var(--lcd); display: none; place-items: center; padding: 24px; z-index: 20; }
+  .gone.show { display: grid; }
+
+  .tool.on { background: var(--ink); color: var(--lcd); }
+  .tool svg, .tool .glyph { width: 20px; height: 20px; fill: currentColor; shape-rendering: crispEdges; }
+  .tool.primary { background: var(--ink); color: var(--lcd); }
+  section[hidden] { display: none; }
+
+  /* pairing dialog: dithered backdrop like a 1-bit screen dimming */
+  .modal {
+    position: fixed; inset: 0; z-index: 15; display: grid; place-items: center; padding: 16px;
+    background-image: conic-gradient(var(--ink) 25%, transparent 0 50%, var(--ink) 0 75%, transparent 0);
+    background-size: 4px 4px;
+  }
+  .modal[hidden] { display: none; }
+  .dialog {
+    width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto;
+    background: var(--lcd); border: 3px solid var(--ink); border-radius: var(--radius);
+    box-shadow: 6px 6px 0 var(--ink); padding: 18px 20px 20px;
+  }
+  .dialog h2 { margin: 0 0 10px; font-size: 22px; font-weight: 800; font-stretch: 87.5%; }
+  .dialog p { margin: 0 0 12px; font-size: 17px; }
+  .dialog .actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+  .devlist { display: grid; gap: 10px; margin: 6px 0 4px; }
+  .devbtn {
+    display: flex; align-items: center; gap: 12px; text-align: left; cursor: pointer;
+    min-height: 60px; padding: 8px 14px; background: transparent;
+    border: 3px solid var(--ink); border-radius: var(--radius);
+  }
+  .devbtn:active { background: var(--ink); color: var(--lcd); }
+  .devbtn strong { font-size: 19px; font-weight: 800; font-stretch: 87.5%; display: block; }
+  .devbtn small { font-size: 14px; }
+  .slots { display: flex; gap: 8px; justify-content: center; margin: 4px 0 14px; }
+  .slot {
+    width: 46px; height: 58px; border: 3px solid var(--ink); border-radius: 8px;
+    display: grid; place-items: center; font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums;
+  }
+  .slot.next { border-style: dashed; }
+  .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 330px; margin: 0 auto; }
+  .keypad button {
+    min-height: 58px; font-size: 26px; font-weight: 800; cursor: pointer; background: var(--lcd);
+    border: 3px solid var(--ink); border-radius: 10px; box-shadow: 4px 4px 0 var(--ink); margin: 0 4px 4px 0;
+  }
+  .keypad button:active { transform: translate(4px, 4px); box-shadow: none; background: var(--ink); color: var(--lcd); }
+  .keypad button:disabled { box-shadow: none; border-style: dashed; cursor: default; }
+  .keypad svg { width: 30px; height: 26px; fill: currentColor; shape-rendering: crispEdges; vertical-align: middle; }
+  @media (max-height: 680px) {
+    .dialog { padding: 12px 16px 14px; }
+    .dialog p { margin-bottom: 8px; }
+    .slot { height: 46px; font-size: 26px; }
+    .keypad { gap: 6px; }
+    .keypad button { min-height: 44px; font-size: 22px; }
+    .dialog .actions { margin-top: 10px; }
+  }
+
+  @media (max-width: 640px) {
+    .bar { padding: 8px 12px; } main { padding: 14px 12px 24px; }
+    .grid { grid-template-columns: 1fr; }
+    .bar .device .name { max-width: 40vw; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cursor, .waves .w1, .waves .w2, .waves .w3 { animation: none; }
+  }
+</style>
+</head>
+<body>
+<header class="bar">
+  <h1><span class="sr-only">Flipper Remote</span><canvas class="pixel" data-pixel="Flipper Remote" data-px="13" data-scale="3" aria-hidden="true"></canvas></h1>
+  <div class="device" id="device" aria-live="polite"></div>
+  <button id="linkBtn" type="button" hidden></button>
+</header>
+
+<main>
+  <div id="status"></div>
+  <section id="pinnedSection" aria-labelledby="pinnedTitle">
+    <div class="head">
+      <h2 id="pinnedTitle"><span class="sr-only">Pinned</span><canvas class="pixel" data-pixel="Pinned" data-px="12" data-scale="2" aria-hidden="true"></canvas></h2>
+      <span class="spacer"></span>
+      <label class="tool picker"><span class="sr-only">Show</span><select id="showSel">
+        <option value="all">All</option><option value="subghz">Sub-GHz</option>
+        <option value="infrared">Infrared</option><option value="lfrfid">RFID 125 kHz</option>
+        <option value="nfc">NFC</option><option value="ibutton">iButton</option>
+      </select></label>
+      <button class="tool" id="pinnedOnlyBtn" type="button" aria-pressed="false"><span id="pinnedOnlyIcon"></span>Pinned only</button>
+    </div>
+    <div id="pinned"></div>
+  </section>
+
+  <section id="browseSection" aria-labelledby="browseTitle">
+    <div class="head">
+      <h2 id="browseTitle" class="sr-only">Saved on the Flipper</h2>
+      <nav class="crumbs" id="crumbs" aria-label="Folder"></nav>
+      <span class="spacer"></span>
+      <button class="tool" id="refreshBtn" type="button">
+        <span id="refreshIcon"></span>
+        Refresh
+      </button>
+    </div>
+    <div id="listing"></div>
+  </section>
+</main>
+
+<footer>
+  <span id="hint">Tap to send. Hold to keep sending.</span>
+  <span class="spacer"></span>
+  <button id="pairBtn" type="button">Pair a Flipper</button>
+  <button id="themeBtn" type="button"></button>
+</footer>
+
+<div class="modal" id="pairModal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="pairTitle">
+    <h2 id="pairTitle">Pair a Flipper</h2>
+    <div id="pairBody" aria-live="polite"></div>
+    <div class="actions" id="pairActions"></div>
+  </div>
+</div>
+
+<div class="popup" id="popup" role="alert"><p id="popupText"></p><button type="button" id="popupBtn">OK</button></div>
+<div class="gone" id="gone"><p class="note">Flipper Remote has stopped. Open it again from your app menu.</p></div>
+
+<template id="keyTpl">
+  <div class="key">
+    <button class="send" type="button">
+      <span class="legend"></span>
+      <span class="meta"><span class="waves" aria-hidden="true"><svg viewBox="0 0 11 9"><rect x="0" y="3" width="2" height="3"/><path class="w1" d="M3 2h1v1h1v3H4v1H3V6h1V3H3z"/><path class="w2" d="M5 1h1v1h1v5H6v1H5V7h1V2H5z"/><path class="w3" d="M7 0h1v1h1v1h1v5H9v1H8v1H7V8h1V7h1V2H8V1H7z"/></svg></span><span class="info"></span></span>
+    </button>
+    <button class="pin" type="button"></button>
+  </div>
+</template>
+
+<script>
+"use strict";
+const TOKEN = "{{TOKEN}}";
+// What the Flipper keeps where. Sub-GHz and Infrared are sent (tap, or hold to keep sending); RFID, NFC and
+// iButton are emulated (tap to start, tap again to stop; it stops by itself after a while).
+const KINDS = {
+  subghz: { root: "/ext/subghz", ext: ".sub", title: "Sub-GHz", emulate: false,
+            empty: "No saved signals in this folder. Signals you save in the Flipper's Sub-GHz app show up here." },
+  infrared: { root: "/ext/infrared", ext: ".ir", title: "Infrared", emulate: false,
+              empty: "No saved remotes in this folder. Remotes you save in the Flipper's Infrared app show up here." },
+  lfrfid: { root: "/ext/lfrfid", ext: ".rfid", title: "RFID 125 kHz", emulate: true,
+            empty: "No saved keys in this folder. Keys you save in the Flipper's 125 kHz RFID app show up here." },
+  nfc: { root: "/ext/nfc", ext: ".nfc", title: "NFC", emulate: true,
+         empty: "No saved cards in this folder. Cards you save in the Flipper's NFC app show up here." },
+  ibutton: { root: "/ext/ibutton", ext: ".ibtn", title: "iButton", emulate: true,
+             empty: "No saved keys in this folder. Keys you save in the Flipper's iButton app show up here." },
+};
+const ALL_ROOT = "/ext";
+const SHOW_CHOICES = ["all", ...Object.keys(KINDS)];   // "All" first: the default until something is picked
+function kindOf(path) {
+  for (const [kind, k] of Object.entries(KINDS)) if (path === k.root || path.startsWith(k.root + "/")) return kind;
+  return null;
+}
+function fileKind(path) {
+  const kind = kindOf(path);
+  return kind && path !== KINDS[kind].root && path.toLowerCase().endsWith(KINDS[kind].ext) ? kind : null;
+}
+const keyOf = (path, signal) => (signal ? `${path}#${signal}` : path);
+const scopeRoot = (show = S.show) => (show === "all" ? ALL_ROOT : KINDS[show].root);
+function inScope(path, show = S.show) {
+  if (typeof path !== "string" || path.split("/").includes("..")) return false;
+  return show === "all" ? path === ALL_ROOT || kindOf(path) !== null : kindOf(path) === show;
+}
+const parentOf = (path) => path.split("/").slice(0, -1).join("/") || ALL_ROOT;
+function pix(rows) {
+  let d = "";
+  rows.forEach((r, y) => { for (let x = 0; x < r.length; x++) if (r[x] === "#") d += `M${x} ${y}h1v1h-1z`; });
+  return `<svg viewBox="0 0 ${rows[0].length} ${rows.length}" aria-hidden="true"><path d="${d}"/></svg>`;
+}
+const STAR_POINTS = "12,1.5 14.59,8.44 21.99,8.76 16.18,13.36 18.17,20.49 12,16.4 5.83,20.49 7.82,13.36 2.01,8.76 9.41,8.44";
+const STAR = `<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="${STAR_POINTS}"/></svg>`;
+const STAR_OPEN = `<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="${STAR_POINTS}" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>`;
+const FOLDER = pix([
+  ".####.......",
+  "#....#######",
+  "#..........#",
+  "############",
+  "#..........#",
+  "#..........#",
+  "#..........#",
+  "#..........#",
+  "############",
+]);
+const UP = pix([
+  "....#....",
+  "...###...",
+  "..#####..",
+  ".#######.",
+  "#########",
+  "...###...",
+  "...###...",
+  "...###...",
+  "...###...",
+]);
+function phaseText(item, job) {
+  const k = KINDS[item.kind];
+  switch (job.phase) {
+    case "queued": return "Waiting…";
+    case "connecting": return "Connecting…";
+    case "reading": return job.size ? `Reading file… ${Math.min(100, Math.round(100 * (job.bytes || 0) / job.size))}%`
+                                    : "Reading file…";
+    case "opening": return `Opening ${k.title}…`;
+    case "loading": return "Loading…";
+    case "sending": return job.hold || S.holding.has(item.key) ? "Sending, let go to stop" : "Sending…";
+    case "emulating": {
+      const left = Math.max(0, Math.ceil(((job.until || 0) - performance.now()) / 1000));
+      return `Emulating, ${left} s. Tap to stop`;
+    }
+    case "done": return k.emulate ? "Stopped" : "Sent";
+    case "error": return k.emulate ? "Not emulated" : "Not sent";
+  }
+  return "";
+}
+
+const S = {
+  status: { state: "idle" },
+  favorites: [],
+  path: "/ext",
+  show: "all",
+  folders: {},            // the folder last open for each choice in "Show"
+  listings: {},           // path -> listing (dirs/files)
+  listError: {},          // path -> message
+  meta: {},               // file path -> meta
+  jobs: {},               // file path -> { id, phase, message, hold }
+  holding: new Set(),
+};
+
+// Settings are kept by the app (config.json), so they survive restarts and port changes.
+const INITIAL = {{SETTINGS}};
+const INITIAL_PINS = {{PINS}};
+function saveSetting(changes, via) { api("/api/settings", via ? Object.assign({ via }, changes) : changes).catch(() => {}); }
+
+// ---------------------------------------------------------------- helpers
+const $ = (id) => document.getElementById(id);
+const pretty = (name) => name.replace(/\.(sub|ir|rfid|nfc|ibtn)$/i, "").replace(/_/g, " ");
+const sel = (key) => `[data-key="${CSS.escape(key)}"]`;
+
+// This window's name (the launcher gives it one), so the app's log can say which window did what, and so the
+// app can keep just the window opened last.
+const WINDOW_ID = (new URLSearchParams(location.search).get("w") || "").replace(/[^a-z0-9]/gi, "").slice(0, 8) ||
+  Math.random().toString(36).slice(2, 8);
+
+// How an action was set off, for the app's log: "touch@512,233", "mouse@…", "key:Enter", "controller"…
+// If buttons ever get pressed that nobody pressed, the log then shows what did it.
+let lastKey = null;
+document.addEventListener("keydown", (e) => {
+  lastKey = { key: e.key === " " ? "Space" : e.key, repeat: e.repeat, t: performance.now() };
+  // A held key repeats. Buttons act on the first press only, so a held or stuck key can't flip a pin,
+  // "Pinned only" or anything else over and over.
+  if (e.repeat && e.key === "Enter" && document.activeElement && document.activeElement.tagName === "BUTTON") {
+    e.preventDefault();
+  }
+}, true);
+function viaOf(e) {
+  if (S.nextVia) { const v = S.nextVia; S.nextVia = null; return v; }   // the controller code says it's itself
+  if (!e || !e.isTrusted) return "app";
+  if (e.detail === 0) {   // a click with no pointer: a key did it
+    if (lastKey && performance.now() - lastKey.t < 1000) return `key:${lastKey.key}${lastKey.repeat ? ":held" : ""}`;
+    return "keyboard";
+  }
+  return `${e.pointerType || "mouse"}@${Math.round(e.clientX)},${Math.round(e.clientY)}`;
+}
+
+async function api(url, body) {
+  const res = await fetch(url, {
+    method: body ? "POST" : "GET",
+    headers: { "X-Token": TOKEN, "X-Window": WINDOW_ID, "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* not JSON */ }
+  if (!res.ok || data.ok === false) throw new Error(data.error || `The app answered with HTTP ${res.status}.`);
+  return data;
+}
+
+let popupTimer = null;
+function popup(text, sticky) {
+  $("popupText").textContent = text;
+  $("popup").classList.add("show");
+  clearTimeout(popupTimer);
+  if (!sticky) popupTimer = setTimeout(() => $("popup").classList.remove("show"), 9000);
+}
+$("popupBtn").addEventListener("click", () => $("popup").classList.remove("show"));
+
+function metaText(m, kind) {
+  if (!m) return "";
+  if (kind === "infrared") {
+    const n = m.buttons != null ? m.buttons : (m.signals || []).length;
+    return `${n} button${n === 1 ? "" : "s"}`;
+  }
+  if (kind && kind !== "subghz") return [m.protocol, m.data].filter(Boolean).join(", ");
+  const parts = [];
+  if (m.frequency) {
+    const mhz = m.frequency / 1e6;
+    parts.push(`${Number.isInteger(mhz) ? mhz : mhz.toFixed(3).replace(/0+$/, "")} MHz`);
+  }
+  if (m.protocol === "RAW" && m.raw_ms) parts.push(`RAW ${(m.raw_ms / 1000).toFixed(1)} s`);
+  else if (m.protocol) parts.push(m.protocol);
+  return parts.join(", ");
+}
+
+// ---------------------------------------------------------------- pixel text (1-bit, like the Flipper's LCD)
+let readbackOK = null;
+function canvasReadbackOK() {
+  // Privacy modes (e.g. Brave's strict fingerprinting protection) can scramble canvas pixels.
+  if (readbackOK !== null) return readbackOK;
+  try {
+    const c = document.createElement("canvas");
+    c.width = 8; c.height = 8;
+    const x = c.getContext("2d");
+    x.fillStyle = "#000"; x.fillRect(0, 0, 4, 8);
+    const d = x.getImageData(0, 0, 8, 8).data;
+    let good = 0;
+    for (let i = 0; i < 64; i++) if ((i % 8 < 4) ? d[i * 4 + 3] > 200 : d[i * 4 + 3] < 50) good++;
+    readbackOK = good >= 60;
+  } catch (e) { readbackOK = false; }
+  return readbackOK;
+}
+
+function drawPixel(canvas) {
+  if (!canvasReadbackOK()) {   // show the heading as ordinary text instead
+    canvas.hidden = true;
+    const label = canvas.parentElement.querySelector(".sr-only");
+    if (label) { label.classList.remove("sr-only"); label.classList.add("plain"); }
+    return;
+  }
+  const text = canvas.dataset.pixel;
+  const px = Number(canvas.dataset.px || 12);
+  const want = Number(canvas.dataset.scale || 3);
+  const scale = want >= 3 && window.innerWidth < 860 ? want - 1 : want;
+  const font = `700 ${px}px ${getComputedStyle(document.body).fontFamily}`;
+  const probe = document.createElement("canvas").getContext("2d");
+  probe.font = font;
+  const w = Math.max(1, Math.ceil(probe.measureText(text).width) + 2), h = Math.ceil(px * 1.3);
+  const off = document.createElement("canvas");
+  off.width = w; off.height = h;
+  const c = off.getContext("2d");
+  c.font = font; c.fillStyle = "#000"; c.fillText(text, 1, Math.round(px * 1.02));
+  const img = c.getImageData(0, 0, w, h);
+  const rgb = getComputedStyle(canvas).color.match(/\d+/g).map(Number);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const on = img.data[i + 3] > 115;
+    img.data[i] = rgb[0]; img.data[i + 1] = rgb[1]; img.data[i + 2] = rgb[2]; img.data[i + 3] = on ? 255 : 0;
+  }
+  c.putImageData(img, 0, 0);
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(w * scale * dpr); canvas.height = Math.round(h * scale * dpr);
+  canvas.style.width = `${w * scale}px`; canvas.style.height = `${h * scale}px`;
+  const v = canvas.getContext("2d");
+  v.imageSmoothingEnabled = false;
+  v.clearRect(0, 0, canvas.width, canvas.height);
+  v.drawImage(off, 0, 0, canvas.width, canvas.height);
+}
+const drawAllPixels = () => document.querySelectorAll("canvas.pixel").forEach(drawPixel);
+
+// ---------------------------------------------------------------- theme
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  $("themeBtn").textContent = theme === "dark" ? "Backlight mode" : "Dark mode";
+  drawAllPixels();
+}
+let theme = INITIAL.theme || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+$("themeBtn").addEventListener("click", () => {
+  theme = theme === "dark" ? "light" : "dark";
+  saveSetting({ theme });
+  applyTheme(theme);
+});
+
+// ---------------------------------------------------------------- "Pinned only" view
+const BOX = pix(["#########", "#.......#", "#.......#", "#.......#", "#.......#", "#.......#", "#.......#", "#.......#", "#########"]);
+const BOX_TICK = pix(["#########", "#.......#", "#......##", "#.....#.#", "##...#..#", "#.#.#...#", "#..#....#", "#.......#", "#########"]);
+S.pinnedOnly = !!INITIAL.pinned_only;
+function applyPinnedOnly() {
+  const btn = $("pinnedOnlyBtn");
+  btn.setAttribute("aria-pressed", S.pinnedOnly ? "true" : "false");
+  btn.classList.toggle("on", S.pinnedOnly);
+  $("pinnedOnlyIcon").innerHTML = S.pinnedOnly ? BOX_TICK : BOX;
+  $("browseSection").hidden = S.pinnedOnly;
+  renderPinned();
+}
+$("pinnedOnlyBtn").addEventListener("click", (e) => {
+  S.pinnedOnly = !S.pinnedOnly;
+  saveSetting({ pinned_only: S.pinnedOnly }, viaOf(e));
+  applyPinnedOnly();
+  requestFit(S.pinnedOnly ? "pinned" : "browse", 0);
+  if (!S.pinnedOnly && !S.listings[S.path]) loadFolder(S.path, false);
+});
+
+// ---------------------------------------------------------------- connection status
+function renderStatus() {
+  const st = S.status, dev = $("device"), btn = $("linkBtn");
+  dev.replaceChildren();
+  const name = document.createElement("span");
+  name.className = "name";
+  btn.hidden = false;
+  btn.disabled = false;
+  if (st.state === "connected") {
+    name.textContent = st.device || "Flipper";
+    dev.append(name);
+    if (typeof st.battery === "number") {
+      const bat = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      bat.setAttribute("viewBox", "0 0 14 8"); bat.setAttribute("class", "glyph"); bat.setAttribute("aria-hidden", "true");
+      const fill = Math.max(1, Math.round(st.battery / 10));
+      bat.innerHTML = `<path d="M0 0h12v2h2v4h-2v2H0zm1 1v6h10V1z"/><rect x="1" y="1" width="${fill}" height="6"/>`;
+      const pct = document.createElement("span");
+      pct.textContent = `${st.battery}%`;
+      dev.append(bat, pct);
+    }
+    btn.textContent = "Disconnect";
+    btn.dataset.action = "disconnect";
+  } else if (st.state === "connecting" || st.state === "pairing") {
+    name.textContent = st.message || "Connecting…";
+    const cur = document.createElement("span");
+    cur.className = "cursor";
+    dev.append(name, cur);
+    btn.textContent = st.state === "pairing" ? "Pairing" : "Connecting";
+    btn.disabled = true;
+  } else {
+    name.textContent = "Not connected";
+    dev.append(name);
+    btn.textContent = "Connect";
+    btn.dataset.action = "connect";
+  }
+  // problems get a panel at the top, written as what to do next
+  const panelKey = st.state === "error" && st.message ? `${st.message}|${st.kind}` : "";
+  if (panelKey !== S.panelKey) { S.panelKey = panelKey; if (S.pinnedOnly) requestFit("pinned"); }
+  const box = $("status");
+  box.replaceChildren();
+  if (st.state === "error" && st.message) {
+    const panel = document.createElement("div");
+    panel.className = "panel";
+    const p = document.createElement("p");
+    p.className = "note";
+    p.textContent = st.message;
+    const retry = document.createElement("button");
+    retry.className = "tool"; retry.type = "button"; retry.textContent = "Try again";
+    retry.addEventListener("click", () => api("/api/connect", {}).catch((e) => popup(e.message)));
+    panel.append(p, retry);
+    if (st.kind === "not_found" || st.kind === "pairing") {
+      const pairNow = document.createElement("button");
+      pairNow.className = "tool primary"; pairNow.type = "button"; pairNow.textContent = "Pair a Flipper";
+      pairNow.addEventListener("click", openPairing);
+      panel.append(pairNow);
+    }
+    box.append(panel);
+    box.style.marginBottom = "18px";
+  } else {
+    box.style.marginBottom = "0";
+  }
+}
+$("linkBtn").addEventListener("click", (e) => {
+  const action = e.currentTarget.dataset.action;
+  if (action) api(`/api/${action}`, {}).catch((err) => popup(err.message));
+});
+
+// ---------------------------------------------------------------- keys
+function makeKey(item) {
+  // item: { key, path, kind, label, signal (one button of an Infrared remote), meta }
+  const node = $("keyTpl").content.firstElementChild.cloneNode(true);
+  node.dataset.key = item.key;
+  node._item = item;
+  node.querySelector(".legend").textContent = item.label;
+  if (KINDS[item.kind].emulate) wireToggle(node, item);
+  else wirePress(node, item);
+  const pin = node.querySelector(".pin");
+  pin.addEventListener("click", (e) => togglePin(item, viaOf(e)));
+  updateKey(node);
+  return node;
+}
+
+function infoText(item) {
+  if (item.signal) {
+    const m = S.meta[item.path];
+    const sig = ((m && m.signals) || []).find((x) => x.name === item.signal);
+    return (sig && sig.protocol) || item.protocol || (item.meta && item.meta.protocol) || "";
+  }
+  return metaText(S.meta[item.path], item.kind);
+}
+const running = (job) => !!job && !["done", "error"].includes(job.phase);
+
+function updateKey(node) {
+  const item = node._item;
+  const job = S.jobs[item.key];
+  const pinned = S.favorites.some((f) => f.key === item.key);
+  const pin = node.querySelector(".pin");
+  pin.innerHTML = pinned ? STAR : STAR_OPEN;
+  const label = node.querySelector(".legend").textContent;
+  pin.setAttribute("aria-label", pinned ? `Unpin ${label}` : `Pin ${label}`);
+  pin.setAttribute("aria-pressed", pinned ? "true" : "false");
+  const phase = job ? job.phase : null;
+  node.classList.toggle("waiting", phase === "queued");
+  node.classList.toggle("busy", !!phase && !["queued", "done", "error"].includes(phase));
+  node.classList.toggle("sending", phase === "sending" || phase === "emulating");
+  node.classList.toggle("failed", phase === "error");
+  const info = job ? phaseText(item, job) || infoText(item) : infoText(item);
+  node.querySelector(".info").textContent = info;
+  const verb = KINDS[item.kind].emulate ? (running(job) ? "Stop emulating" : "Emulate") : "Send";
+  node.querySelector(".send").setAttribute("aria-label", `${verb} ${label}${info ? ", " + info : ""}`);
+}
+
+function refreshKeys(key) {
+  document.querySelectorAll(key ? `.key${sel(key)}` : ".key").forEach(updateKey);
+}
+setInterval(() => {   // the countdown on cards and keys being emulated
+  for (const [key, job] of Object.entries(S.jobs)) if (job.phase === "emulating") refreshKeys(key);
+}, 1000);
+
+const HOLD_AFTER_MS = 450;
+function wirePress(node, item) {
+  const btn = node.querySelector(".send");
+  const what = { path: item.path, signal: item.signal || undefined };
+  let timer = null, down = false, holding = false, via = "";
+  const start = (how) => {
+    if (down) return;
+    down = true; holding = false; via = how || "app";
+    node.classList.add("down");
+    timer = setTimeout(() => {
+      holding = true;
+      S.holding.add(item.key);
+      api("/api/hold", Object.assign({ action: "start", via }, what)).catch((e) => popup(e.message));
+    }, HOLD_AFTER_MS);
+  };
+  const end = (send) => {
+    if (!down) return;
+    down = false;
+    node.classList.remove("down");
+    clearTimeout(timer);
+    if (holding) {
+      S.holding.delete(item.key);
+      api("/api/hold", Object.assign({ action: "stop" }, what)).catch(() => {});
+    } else if (send) {
+      S.jobs[item.key] = { phase: "queued" };
+      updateKey(node);
+      api("/api/send", Object.assign({ via }, what))
+        .catch((e) => { S.jobs[item.key] = { phase: "error" }; refreshKeys(item.key); popup(e.message); });
+    }
+  };
+  btn.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    try { btn.setPointerCapture(e.pointerId); } catch (err) { /* not capturable */ }
+    start(e.isTrusted ? `${e.pointerType || "mouse"}@${Math.round(e.clientX)},${Math.round(e.clientY)}` : "app");
+  });
+  btn.addEventListener("pointerup", (e) => {
+    const r = btn.getBoundingClientRect();
+    const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    end(inside);
+  });
+  btn.addEventListener("pointercancel", () => end(false));
+  btn.addEventListener("contextmenu", (e) => e.preventDefault());
+  btn.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && !e.repeat) { e.preventDefault(); start(`key:${e.key === " " ? "Space" : e.key}`); }
+  });
+  btn.addEventListener("keyup", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); end(true); }
+  });
+  btn.addEventListener("blur", () => end(false));
+  node._press = { start, end };
+}
+
+// Cards and keys: tap to start emulating, tap again to stop.
+function wireToggle(node, item) {
+  const btn = node.querySelector(".send");
+  const toggle = (via) => {
+    if (running(S.jobs[item.key])) {
+      api("/api/stop", { path: item.path, via }).catch((e) => popup(e.message));
+      return;
+    }
+    S.jobs[item.key] = { phase: "queued" };
+    updateKey(node);
+    api("/api/send", { path: item.path, via })
+      .catch((e) => { S.jobs[item.key] = { phase: "error" }; refreshKeys(item.key); popup(e.message); });
+  };
+  btn.addEventListener("click", (e) => toggle(viaOf(e)));
+  btn.addEventListener("contextmenu", (e) => e.preventDefault());
+  node._press = { start: (how) => toggle(how || "app"), end: () => {} };
+}
+
+async function togglePin(item, via) {
+  const on = !S.favorites.some((f) => f.key === item.key);
+  // a remote's button is pinned under the remote's name too ("TV Power"), so it makes sense on its own
+  const label = item.signal ? `${pretty(item.path.split("/").pop())} ${item.signal}` : item.label;
+  try {
+    const res = await api("/api/favorite", { path: item.path, signal: item.signal || undefined, on, label,
+                                             via: via || "app" });
+    S.favorites = res.favorites;
+    renderPinned();
+    refreshKeys();
+  } catch (e) { popup(e.message); }
+}
+
+// ---------------------------------------------------------------- pinned + folder views
+const shownPins = () => S.favorites.filter((f) => S.show === "all" || f.kind === S.show);
+function renderPinned() {
+  drawPinned();
+  const key = shownPins().map((f) => f.key).join("\n");
+  if (key !== S.pinKey) { S.pinKey = key; if (S.pinnedOnly) requestFit("pinned"); }
+}
+function drawPinned() {
+  const box = $("pinned");
+  box.replaceChildren();
+  const pins = shownPins();
+  const where = S.show === "all" ? "" : ` in ${KINDS[S.show].title}`;
+  if (!pins.length && S.pinnedOnly) {
+    const p = document.createElement("p");
+    p.className = "note";
+    p.textContent = `Nothing${where} is pinned yet. Turn off Pinned only to see everything, then tap the star on the ones you use.`;
+    box.append(p);
+    return;
+  }
+  if (!pins.length) {
+    const p = document.createElement("p");
+    p.className = "note";
+    p.innerHTML = `Pin the ones you use most and they'll stay here. Tap the <span class="sr-only">star</span>`;
+    const star = document.createElement("span");
+    star.innerHTML = STAR_OPEN;
+    star.firstChild.style.cssText = "width:20px;height:20px;vertical-align:-4px;fill:currentColor;shape-rendering:crispEdges";
+    p.append(star, document.createTextNode(" on any of them below."));
+    box.append(p);
+    return;
+  }
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  for (const f of pins) {
+    grid.append(makeKey({ key: f.key, path: f.path, kind: f.kind, signal: f.signal, meta: f.meta,
+                          label: pretty(f.label || f.path.split("/").pop()) }));
+  }
+  box.append(grid);
+}
+
+function renderCrumbs() {
+  const nav = $("crumbs");
+  nav.replaceChildren();
+  if (S.path !== scopeRoot()) {
+    const up = document.createElement("button");
+    up.type = "button"; up.innerHTML = UP; up.setAttribute("aria-label", "Up one folder");
+    up.firstChild.style.cssText = "width:22px;height:18px;fill:currentColor;shape-rendering:crispEdges";
+    up.addEventListener("click", () => openFolder(parentOf(S.path)));
+    nav.append(up);
+  }
+  const segs = S.show === "all" ? [{ name: "All", path: ALL_ROOT }] : [];
+  const kind = kindOf(S.path);
+  if (kind) {
+    const root = KINDS[kind].root;
+    segs.push({ name: KINDS[kind].title, path: root });
+    const rel = S.path.slice(root.length).split("/").filter(Boolean);
+    rel.forEach((name, i) => segs.push({ name: pretty(name), path: `${root}/${rel.slice(0, i + 1).join("/")}` }));
+  }
+  segs.forEach((seg, i) => {
+    if (i) { const sep = document.createElement("span"); sep.className = "sep"; sep.textContent = "/"; nav.append(sep); }
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = seg.name;
+    if (seg.path === S.path) b.setAttribute("aria-current", "page");
+    else b.addEventListener("click", () => openFolder(seg.path));
+    nav.append(b);
+  });
+}
+
+const REMOTE = pix([
+  "..######..",
+  ".#......#.",
+  ".#.##.#.#.",
+  ".#......#.",
+  ".#.#..#.#.",
+  ".#......#.",
+  ".#.#..#.#.",
+  ".#......#.",
+  "..######..",
+]);
+function tile(path, name, icon, sub) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "folder"; b.dataset.folder = path;
+  b.innerHTML = icon;
+  const t = document.createElement("span"); t.textContent = name;
+  if (sub !== undefined) {   // a remote: how many buttons, filled in once the Flipper has said
+    const small = document.createElement("span"); small.className = "sub"; small.textContent = sub; t.append(small);
+  }
+  b.append(t);
+  b.addEventListener("click", () => openFolder(path));
+  return b;
+}
+
+function renderListing() {
+  const active = document.activeElement;
+  const keepPath = active && active.closest && active.closest("#listing .key") ? active.closest(".key").dataset.key : null;
+  const keepPin = keepPath && active.classList.contains("pin");
+  const keepFolder = active && active.dataset ? active.dataset.folder : null;
+  renderCrumbs();
+  const box = $("listing");
+  box.replaceChildren();
+  queueMicrotask(() => {
+    let el = null;
+    if (keepPath) el = box.querySelector(`.key${sel(keepPath)} ${keepPin ? ".pin" : ".send"}`);
+    else if (keepFolder) el = box.querySelector(`.folder[data-folder="${CSS.escape(keepFolder)}"]`);
+    if (el) el.focus({ preventScroll: true });
+  });
+  const listing = S.listings[S.path];
+  const err = S.listError[S.path];
+  if (!listing && err) {
+    // A connection problem is already explained in the panel above; don't say it twice.
+    if ((S.status.state === "error" && S.status.message) || S.status.state === "connecting" ||
+        S.status.state === "pairing") return;
+    const panel = document.createElement("div");
+    panel.className = "panel";
+    const p = document.createElement("p"); p.className = "note"; p.textContent = err;
+    const again = document.createElement("button");
+    again.className = "tool"; again.type = "button"; again.textContent = "Try again";
+    again.addEventListener("click", () => loadFolder(S.path, true));
+    panel.append(p, again);
+    if (S.path !== scopeRoot()) {
+      const home = document.createElement("button");
+      home.className = "tool"; home.type = "button";
+      home.textContent = `Back to ${S.show === "all" ? "All" : KINDS[S.show].title}`;
+      home.addEventListener("click", () => openFolder(scopeRoot()));
+      panel.append(home);
+    }
+    box.append(panel);
+    return;
+  }
+  if (!listing) {
+    const grid = document.createElement("div");
+    grid.className = "grid";
+    grid.setAttribute("aria-label", "Reading the Flipper's SD card");
+    for (let i = 0; i < 6; i++) { const s = document.createElement("div"); s.className = "skeleton"; grid.append(s); }
+    box.append(grid);
+    return;
+  }
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  let count = 0;
+  if (listing.all) {   // "All": a folder for each kind
+    for (const k of Object.values(KINDS)) { grid.append(tile(k.root, k.title, FOLDER)); count++; }
+  } else if (listing.remote) {   // an Infrared remote, opened: one key per button
+    for (const sig of listing.signals || []) {
+      grid.append(makeKey({ key: keyOf(listing.path, sig.name), path: listing.path, kind: "infrared",
+                            signal: sig.name, protocol: sig.protocol, label: sig.name.replace(/_/g, " ") }));
+      count++;
+    }
+  } else {
+    for (const d of listing.dirs) { grid.append(tile(`${S.path}/${d}`, pretty(d), FOLDER)); count++; }
+    for (const f of listing.files) {
+      if (f.meta) S.meta[f.path] = f.meta;
+      if (f.kind === "infrared") grid.append(tile(f.path, pretty(f.name), REMOTE, metaText(S.meta[f.path], "infrared")));
+      else grid.append(makeKey({ key: f.path, path: f.path, kind: f.kind, label: pretty(f.name) }));
+      count++;
+    }
+  }
+  if (!count) {
+    const p = document.createElement("p");
+    p.className = "note";
+    p.textContent = listing.remote ? "This remote has no buttons saved." : KINDS[kindOf(S.path) || "subghz"].empty;
+    box.append(p);
+    return;
+  }
+  box.append(grid);
+  if (S.focusFirst) {
+    S.focusFirst = false;
+    const first = box.querySelector(".folder, .send");
+    if (first) first.focus({ preventScroll: true });
+  }
+}
+
+async function loadFolder(path, refresh) {
+  delete S.listError[path];
+  try {
+    const res = await api(`/api/list?path=${encodeURIComponent(path)}${refresh ? "&refresh=1" : ""}`);
+    if (res.listing && res.listing.files) S.listings[path] = res.listing;
+  } catch (e) {
+    S.listError[path] = e.message;
+  }
+  if (path === S.path) renderListing();
+}
+
+function openFolder(path) {
+  if (!inScope(path)) path = scopeRoot();
+  // when navigating with keys or a controller, land on the first item of the new folder
+  const a = document.activeElement;
+  S.focusFirst = !!(a && a !== document.body && a.closest && a.closest("main"));
+  S.path = path;
+  S.folders[S.show] = path;
+  saveSetting({ folders: { [S.show]: path } });
+  renderListing();
+  loadFolder(path, false);
+  window.scrollTo({ top: 0 });
+}
+$("refreshBtn").addEventListener("click", () => { delete S.listings[S.path]; renderListing(); loadFolder(S.path, true); });
+
+function applyShowText() {
+  const k = KINDS[S.show];
+  $("hint").textContent = !k ? "Tap to send or emulate. Hold Sub-GHz and Infrared to keep sending."
+    : k.emulate ? "Tap to emulate. Tap again to stop." : "Tap to send. Hold to keep sending.";
+}
+function setShow(show, via, save = true) {
+  if (!SHOW_CHOICES.includes(show) || show === S.show) return;
+  S.show = show;
+  $("showSel").value = show;
+  if (save) saveSetting({ show }, via);
+  S.path = inScope(S.folders[show], show) ? S.folders[show] : scopeRoot(show);
+  applyShowText();
+  renderPinned();
+  renderListing();
+  if (!S.pinnedOnly) loadFolder(S.path, false);
+  requestFit(S.pinnedOnly ? "pinned" : "browse", 0);
+}
+$("showSel").addEventListener("change", () => {
+  const via = S.nextVia || (lastKey && performance.now() - lastKey.t < 1500 ? `key:${lastKey.key}` : "menu");
+  S.nextVia = null;
+  setShow($("showSel").value, via);
+});
+$("showSel").addEventListener("keydown", (e) => {   // arrow keys move between buttons, so Enter opens the list
+  if ((e.key === "Enter" || e.key === " ") && !e.repeat) {
+    e.preventDefault();
+    try { $("showSel").showPicker(); } catch (err) { /* older browser: it opens on its own */ }
+  }
+});
+
+// ---------------------------------------------------------------- pairing dialog
+const DEL = pix([
+  "...########",
+  "..#.......#",
+  ".#..#...#.#",
+  "#....#.#..#",
+  "#.....#...#",
+  "#....#.#..#",
+  ".#..#...#.#",
+  "..#.......#",
+  "...########",
+]);
+const P = { open: false, step: null, code: "", device: "your Flipper", lastFocus: null };
+const para = (text) => { const el = document.createElement("p"); el.textContent = text; return el; };
+function actionButton(label, onClick, primary) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = primary ? "tool primary" : "tool"; b.textContent = label;
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+function openPairing(e) {
+  if (P.open) return;
+  Object.assign(P, { open: true, step: "starting", code: "", device: "your Flipper", lastFocus: document.activeElement });
+  $("pairModal").hidden = false;
+  requestFit("dialog", 0);
+  renderPairing({ step: "starting" });
+  api("/api/pair", { action: "start", via: viaOf(e) }).catch((err) => renderPairing({ step: "error", message: err.message }));
+}
+function closePairing(cancel, via) {
+  if (!P.open) return;
+  if (cancel && !["done", "works", "error", "cancelled"].includes(P.step)) {
+    api("/api/pair", { action: "cancel", via: via || "app" }).catch(() => {});
+  }
+  P.open = false; P.step = null;
+  $("pairModal").hidden = true;
+  requestFit("undialog");
+  if (P.lastFocus && P.lastFocus.isConnected) P.lastFocus.focus({ preventScroll: true });
+}
+$("pairBtn").addEventListener("click", openPairing);
+
+function renderPairing(ev) {
+  if (!P.open) return;
+  if (ev.step === "cancelled") { closePairing(false); return; }
+  const focusedDevice = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.address : null;
+  P.step = ev.step;
+  if (ev.device) P.device = ev.device;
+  const body = $("pairBody"), actions = $("pairActions");
+  body.replaceChildren(); actions.replaceChildren();
+  const cancel = actionButton("Cancel", (e) => closePairing(true, viaOf(e)));
+  if (ev.step === "starting" || ev.step === "searching") {
+    body.append(para("On the Flipper, turn Bluetooth on (Settings → Bluetooth) and go back to its main screen. " +
+                     "Turn off your phone's Bluetooth while you pair."));
+    const nearby = (ev.devices || []).filter((d) => d.nearby);
+    if (!nearby.length) {
+      const looking = para("Looking for Flippers nearby ");
+      const cur = document.createElement("span"); cur.className = "cursor";
+      looking.append(cur);
+      body.append(looking);
+    } else {
+      body.append(para("Tap your Flipper:"));
+      const list = document.createElement("div");
+      list.className = "devlist";
+      for (const d of nearby) {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "devbtn"; b.dataset.address = d.address;
+        const text = document.createElement("span");
+        const strong = document.createElement("strong"); strong.textContent = d.name;
+        const small = document.createElement("small");
+        small.textContent = d.paired ? `${d.address}. Already paired with this Deck.` : d.address;
+        text.append(strong, small);
+        b.append(text);
+        b.addEventListener("click", (e) => {
+          renderPairing({ step: d.paired ? "testing" : "pairing", device: d.name });
+          api("/api/pair", { action: "choose", address: d.address, via: viaOf(e) })
+            .catch((err) => renderPairing({ step: "error", message: err.message }));
+        });
+        list.append(b);
+      }
+      body.append(list);
+    }
+    actions.append(cancel);
+  } else if (ev.step === "testing") {
+    body.append(para(`${P.device} is already paired with this Deck. Checking that the pairing still works…`));
+    actions.append(cancel);
+  } else if (ev.step === "works") {
+    body.append(para(`${P.device} is already paired with this Deck and it connects fine, so nothing was changed.`));
+    actions.append(actionButton("Done", () => closePairing(false), true));
+  } else if (ev.step === "confirm") {
+    // Asked only when the existing pairing didn't connect. Keeping it is the default.
+    body.append(para(`${P.device} is paired with this Deck, but it didn't connect: ${ev.message || "no answer."}`),
+                para("Pairing again removes the current pairing first. If that pairing still works, keep it and " +
+                     "check the Flipper is on, nearby, and has Bluetooth on."));
+    const confirm = (remove) => (e) => {
+      if (remove) renderPairing({ step: "removing", device: P.device });
+      api("/api/pair", { action: "confirm", remove, via: viaOf(e) }).catch((err) => renderPairing({ step: "error", message: err.message }));
+      if (!remove) closePairing(false);
+    };
+    actions.append(actionButton("Keep the pairing", confirm(false), true),
+                   actionButton("Remove and pair again", confirm(true)));
+  } else if (ev.step === "removing") {
+    body.append(para(`Removing the old pairing with ${P.device}…`));
+    actions.append(cancel);
+  } else if (ev.step === "pairing") {
+    body.append(para(`Connecting to ${P.device}. It will show a 6-digit code in a moment…`));
+    actions.append(cancel);
+  } else if (ev.step === "code") {
+    P.code = "";
+    body.append(para(`Type the 6-digit code shown on ${P.device}. You have about 30 seconds.`));
+    const slots = document.createElement("div");
+    slots.className = "slots"; slots.id = "slots"; slots.setAttribute("aria-hidden", "true");
+    for (let i = 0; i < 6; i++) { const slot = document.createElement("span"); slot.className = "slot"; slots.append(slot); }
+    const typed = document.createElement("span");
+    typed.className = "sr-only"; typed.id = "typedCode"; typed.setAttribute("aria-live", "polite");
+    const keypad = document.createElement("div");
+    keypad.className = "keypad";
+    for (const k of ["1", "2", "3", "4", "5", "6", "7", "8", "9", "del", "0", "ok"]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      if (k === "del") { b.innerHTML = DEL; b.setAttribute("aria-label", "Delete"); }
+      else if (k === "ok") { b.textContent = "OK"; b.id = "codeOk"; b.setAttribute("aria-label", "Pair with this code"); }
+      else b.textContent = k;
+      b.addEventListener("click", () => codeKey(k));
+      keypad.append(b);
+    }
+    body.append(slots, typed, keypad);
+    actions.append(cancel);
+    updateSlots();
+  } else if (ev.step === "checking") {
+    body.append(para(`Checking the code with ${P.device}…`));
+    actions.append(cancel);
+  } else if (ev.step === "done") {
+    body.append(para(`Paired with ${P.device}. It's ready to use.`));
+    actions.append(actionButton("Done", () => closePairing(false), true));
+  } else if (ev.step === "error") {
+    body.append(para(ev.message || "Pairing didn't work."));
+    actions.append(actionButton("Close", () => closePairing(false)),
+                   actionButton("Try again", (e) => { P.open = false; openPairing(e); }, true));
+  }
+  const modal = $("pairModal");
+  const first = (focusedDevice && modal.querySelector(`.devbtn[data-address="${CSS.escape(focusedDevice)}"]`)) ||
+    modal.querySelector(".devbtn") || modal.querySelector(".keypad button") ||
+    modal.querySelector(".actions .primary") || modal.querySelector(".actions button");
+  if (first) first.focus({ preventScroll: true });
+}
+
+function updateSlots() {
+  document.querySelectorAll("#slots .slot").forEach((el, i) => {
+    el.textContent = P.code[i] || "";
+    el.classList.toggle("next", i === P.code.length);
+  });
+  const typed = $("typedCode");
+  if (typed) typed.textContent = P.code ? `Typed ${P.code.split("").join(" ")}` : "";
+  const ok = $("codeOk");
+  if (ok) {
+    const hadFocus = document.activeElement === ok;
+    ok.disabled = P.code.length !== 6;
+    if (ok.disabled && hadFocus) document.querySelector('.keypad [aria-label="Delete"]').focus();
+  }
+}
+function codeKey(k) {
+  if (P.step !== "code") return;
+  const before = P.code.length;
+  if (k === "del") P.code = P.code.slice(0, -1);
+  else if (k === "ok") {
+    if (P.code.length !== 6) return;
+    const code = P.code;
+    renderPairing({ step: "checking" });
+    api("/api/pair", { action: "code", code }).catch((e) => renderPairing({ step: "error", message: e.message }));
+    return;
+  } else if (/^\d$/.test(k) && P.code.length < 6) P.code += k;
+  updateSlots();
+  if (before < 6 && P.code.length === 6) $("codeOk").focus({ preventScroll: true });   // next press confirms
+}
+
+// ---------------------------------------------------------------- live updates from the app
+const doneTimers = {};
+function onJob(ev) {
+  const key = ev.key || ev.path;
+  const prev = S.jobs[key];
+  if (prev && prev.id && ev.id && ev.id < prev.id) return;   // stale event from an older press
+  if (ev.phase === "emulating") ev.until = performance.now() + (ev.seconds || 30) * 1000;
+  S.jobs[key] = ev;
+  clearTimeout(doneTimers[key]);
+  if (ev.phase === "done" || ev.phase === "error") {
+    doneTimers[key] = setTimeout(() => {
+      if (S.jobs[key] === ev) { delete S.jobs[key]; refreshKeys(key); }
+    }, ev.phase === "done" ? 1600 : 5000);
+    if (ev.phase === "error" && ev.message) popup(ev.message);
+  }
+  refreshKeys(key);
+}
+
+function applySnapshot(snap) {
+  S.status = snap.status || S.status;
+  S.favorites = snap.favorites || [];
+  for (const f of S.favorites) if (f.meta && !f.signal) S.meta[f.path] = f.meta;
+  renderStatus();
+  renderPinned();
+}
+
+let failures = 0;
+function connectEvents() {
+  const es = new EventSource(`/api/events?t=${encodeURIComponent(TOKEN)}&w=${WINDOW_ID}`);
+  const on = (name, fn) => es.addEventListener(name, (e) => { try { fn(JSON.parse(e.data)); } catch (err) { console.error(err); } });
+  on("hello", (snap) => { failures = 0; $("gone").classList.remove("show"); applySnapshot(snap); loadFolder(S.path, false); });
+  on("status", (st) => {
+    const was = S.status.state, wasMessage = S.status.message;
+    S.status = st;
+    renderStatus();
+    if ((st.state !== was || st.message !== wasMessage) && !S.listings[S.path] && S.listError[S.path]) renderListing();
+    if (st.state === "connected" && was !== "connected" && !S.listings[S.path]) loadFolder(S.path, false);
+  });
+  on("files", (listing) => {
+    S.listings[listing.path] = listing;
+    delete S.listError[listing.path];
+    if (listing.path === S.path) renderListing();
+  });
+  on("files_error", (e) => {
+    if (!S.listings[e.path]) S.listError[e.path] = e.message;
+    if (e.path === S.path) renderListing();
+  });
+  on("meta", (e) => {
+    S.meta[e.path] = e.meta;
+    refreshKeys();
+    const t = document.querySelector(`#listing .folder[data-folder="${CSS.escape(e.path)}"] .sub`);
+    if (t) t.textContent = metaText(e.meta, e.kind);
+  });
+  on("job", onJob);
+  on("favorites", (favs) => { S.favorites = favs; renderPinned(); refreshKeys(); });
+  on("replaced", () => {   // the app was opened again and its new window is up: this one closes
+    S.replaced = true;
+    es.close();
+    if (P.open) { P.open = false; $("pairModal").hidden = true; }
+    for (const el of document.querySelectorAll("main, .bar, footer, #pairModal")) el.inert = true;   // nothing to press
+    $("gone").querySelector("p").textContent = "Flipper Remote is open in a newer window. You can close this one.";
+    $("gone").classList.add("show");
+    window.close();
+  });
+  on("pairing", renderPairing);
+  on("settings", (st) => {
+    if (st.theme && st.theme !== theme) { theme = st.theme; applyTheme(theme); }
+    if (st.folders) Object.assign(S.folders, st.folders);
+    if (st.show && st.show !== S.show) setShow(st.show, null, false);
+    if (!!st.pinned_only !== S.pinnedOnly) {
+      S.pinnedOnly = !!st.pinned_only;
+      applyPinnedOnly();
+      requestFit(S.pinnedOnly ? "pinned" : "browse", 0);
+    }
+  });
+  es.onerror = () => {
+    failures += 1;
+    if (failures > 3 || S.replaced) $("gone").classList.add("show");
+  };
+}
+
+// ---------------------------------------------------------------- d-pad / gamepad navigation
+function focusables() {
+  const scope = P.open ? "#pairModal button" : "main button, main select, .bar button, footer button";
+  return [...document.querySelectorAll(scope)].filter((b) => !b.disabled && b.offsetParent !== null);
+}
+function moveFocus(dx, dy) {
+  const items = focusables();
+  const cur = document.activeElement && items.includes(document.activeElement) ? document.activeElement : null;
+  if (!cur) {
+    const first = (P.open ? null : document.querySelector("main .send, main .folder")) || items[0];
+    if (first) first.focus();
+    return;
+  }
+  const a = cur.getBoundingClientRect();
+  const ax = a.left + a.width / 2, ay = a.top + a.height / 2;
+  let best = null, bestScore = Infinity;
+  for (const el of items) {
+    if (el === cur) continue;
+    const b = el.getBoundingClientRect();
+    const bx = b.left + b.width / 2, by = b.top + b.height / 2;
+    const ddx = bx - ax, ddy = by - ay;
+    const along = dx ? ddx * dx : ddy * dy;
+    if (along <= 4) continue;
+    const across = dx ? Math.abs(ddy) : Math.abs(ddx);
+    const score = along + across * 2.5;
+    if (score < bestScore) { bestScore = score; best = el; }
+  }
+  if (best) { best.focus(); best.scrollIntoView({ block: "nearest" }); }
+}
+document.addEventListener("keydown", (e) => {
+  const dirs = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  if (P.open) {
+    if (e.key === "Escape") { e.preventDefault(); closePairing(true, "key:Escape"); }
+    else if (dirs[e.key]) { e.preventDefault(); moveFocus(...dirs[e.key]); }
+    else if (P.step === "code" && /^\d$/.test(e.key)) { e.preventDefault(); codeKey(e.key); }
+    else if (P.step === "code" && e.key === "Backspace") { e.preventDefault(); codeKey("del"); }
+    else if (P.step === "code" && e.key === "Enter" && P.code.length === 6 &&
+             !(document.activeElement && document.activeElement.tagName === "BUTTON")) { e.preventDefault(); codeKey("ok"); }
+    return;
+  }
+  if (dirs[e.key]) { e.preventDefault(); moveFocus(...dirs[e.key]); }
+  else if ((e.key === "Escape" || e.key === "Backspace") && S.path !== scopeRoot() && !S.pinnedOnly &&
+           !(document.activeElement && document.activeElement.tagName === "SELECT")) {
+    e.preventDefault(); openFolder(parentOf(S.path));
+  }
+});
+
+// The window reacts to controller buttons itself only in Game Mode ("pad=1", added by the launcher). In Desktop
+// Mode, Steam's desktop layout already turns the controller into keys and mouse, but the browser can still see
+// the controller itself; acting on that too meant a button mapped to something else also pinned, unpinned or
+// pressed things here.
+const PAD = new URLSearchParams(location.search).get("pad") === "1";
+const pad = { prev: {}, repeatAt: 0, running: false };
+function pollPad(t) {
+  const gp = [...(navigator.getGamepads ? navigator.getGamepads() : [])].find(Boolean);
+  if (!gp) { pad.running = false; return; }   // stop polling until a controller is used again
+  {
+    const b = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
+    const now = { a: b(0), b: b(1), y: b(3), up: b(12) || gp.axes[1] < -0.6, down: b(13) || gp.axes[1] > 0.6,
+                  left: b(14) || gp.axes[0] < -0.6, right: b(15) || gp.axes[0] > 0.6 };
+    const edge = (k) => now[k] && !pad.prev[k];
+    const dir = now.up ? [0, -1] : now.down ? [0, 1] : now.left ? [-1, 0] : now.right ? [1, 0] : null;
+    if (dir && (edge("up") || edge("down") || edge("left") || edge("right") || t > pad.repeatAt)) {
+      moveFocus(...dir);
+      pad.repeatAt = t + (pad.prev.dir ? 140 : 380);
+    }
+    now.dir = !!dir;
+    const el = document.activeElement;
+    const key = el && el.closest ? el.closest(".key") : null;
+    if (edge("a")) {
+      if (key && el.classList.contains("send")) key._press.start("controller:A");
+      else if (el && el.tagName === "SELECT") {   // the controller steps through the choices
+        S.nextVia = "controller:A";
+        el.selectedIndex = (el.selectedIndex + 1) % el.options.length;
+        el.dispatchEvent(new Event("change"));
+      } else if (el && el.click) { S.nextVia = "controller:A"; el.click(); S.nextVia = null; }
+    }
+    if (!now.a && pad.prev.a && key && el.classList.contains("send")) key._press.end(true);
+    if (edge("b")) {
+      if (P.open) closePairing(true, "controller:B");
+      else if (S.path !== scopeRoot() && !S.pinnedOnly) openFolder(parentOf(S.path));
+    }
+    if (edge("y") && key && !P.open) { S.nextVia = "controller:Y"; key.querySelector(".pin").click(); S.nextVia = null; }
+    pad.prev = now;
+  }
+  requestAnimationFrame(pollPad);
+}
+
+// ---------------------------------------------------------------- window size
+// When the launcher opens us as an app window (Brave/Chrome --app), the address ends in ?fit=WxH (the size it
+// opened the window at) and the page sizes its own window: snug around the pinned signals in "Pinned only", the
+// normal size for browsing. It also tells the app the window's exact sizes, so the next launch opens it at the
+// right size straight away, with nothing to adjust.
+const FIT_PARAM = new URLSearchParams(location.search).get("fit");
+const FIT = FIT_PARAM !== null;
+const OPENED_AT = /^(\d+)x(\d+)$/.test(FIT_PARAM || "") ? FIT_PARAM.split("x").map(Number) : null;
+const WIN = Object.assign({}, INITIAL.window || {});   // frame: [w, h], fit: [w, h], pins: what fit was for
+const NORMAL = { w: 1100, h: 680 };                   // inside of the launcher's usual 1100x720 window
+const COL = 341, GAP = 18, SIDE = 40, SHADOW = 5;     // key column, grid gap, main's side padding, key shadow
+const fit = { ready: false, mode: null, tries: 0, timer: null, waiting: false, beforeDialog: null, back: null };
+
+function learnWindow(changes) {
+  const next = Object.assign({}, WIN, changes);
+  if (JSON.stringify(next) === JSON.stringify(WIN)) return;
+  Object.assign(WIN, changes);
+  saveSetting({ window: WIN });
+}
+
+function pinnedTarget() {
+  const n = shownPins().length;
+  const cols = n > 2 ? 3 : 2;
+  const w = cols * COL + (cols - 1) * GAP + SIDE;
+  const grid = document.querySelector("#pinned .grid");
+  let bottom;
+  if (grid && grid.children.length) {
+    // the keys keep their size at the new width; only how many fit in a row changes
+    const keys = [...grid.children];
+    let height = 0;
+    for (let i = 0; i < keys.length; i += cols)
+      height += Math.max(...keys.slice(i, i + cols).map((k) => k.offsetHeight + SHADOW)) + (i ? GAP : 0);
+    bottom = grid.getBoundingClientRect().top + window.scrollY + height;
+  } else {
+    bottom = $("pinned").getBoundingClientRect().bottom + window.scrollY;
+  }
+  const pad = parseFloat(getComputedStyle(document.querySelector("main")).paddingBottom) || 0;
+  return { w, h: Math.ceil(bottom + pad + document.querySelector("footer").offsetHeight) };
+}
+
+function fitTarget() {
+  switch (fit.mode) {
+    case "pinned": return pinnedTarget();
+    case "browse": return { w: Math.max(innerWidth, NORMAL.w), h: Math.max(innerHeight, NORMAL.h) };
+    case "dialog": return { w: Math.max(innerWidth, 640), h: Math.max(innerHeight, 640) };
+    case "back": return fit.back;
+  }
+  return null;
+}
+
+function requestFit(mode, delay = 80) {
+  if (!FIT || !fit.ready) return;   // until the window has settled; then startup fits if it needs to
+  if (mode === "dialog") {
+    if (!fit.beforeDialog) fit.beforeDialog = { w: innerWidth, h: innerHeight };
+  } else if (mode === "undialog") {
+    const before = fit.beforeDialog;
+    fit.beforeDialog = null;
+    if (S.pinnedOnly) mode = "pinned";
+    else if (before) { fit.back = before; mode = "back"; }
+    else return;
+  } else if (P.open) {
+    return;   // the dialog keeps the window big enough for itself; we look again when it closes
+  }
+  fit.mode = mode;
+  fit.tries = 0;
+  clearTimeout(fit.timer);
+  fit.timer = setTimeout(stepFit, delay);
+}
+
+function stepFit() {
+  fit.waiting = false;
+  if (fit.tries >= 6 || window.matchMedia("(display-mode: fullscreen)").matches) return;
+  drawAllPixels();   // the title is drawn smaller in narrow windows, which changes the height needed
+  const t = fitTarget();
+  if (!t) return;
+  const dw = Math.abs(t.w - innerWidth) > 2 ? t.w - innerWidth : 0;
+  const dh = Math.abs(t.h - innerHeight) > 2 ? t.h - innerHeight : 0;
+  if (!dw && !dh) {
+    // fitted. Remember the plain pinned view (no message, no dialog) so the window opens at this size next time.
+    if (fit.mode === "pinned" && !S.panelKey && !P.open)
+      learnWindow({ fit: [innerWidth, innerHeight], pins: S.pinKey || "" });
+    return;
+  }
+  fit.tries += 1;
+  fit.waiting = true;
+  window.resizeBy(dw, dh);   // the browser does this in the background; we check the result when it's done
+  clearTimeout(fit.timer);
+  fit.timer = setTimeout(() => { fit.waiting = false; }, 800);   // never resized: this window can't be sized from here
+}
+window.addEventListener("resize", () => {
+  if (!fit.waiting) return;   // the user is resizing it: leave the window alone
+  clearTimeout(fit.timer);
+  fit.timer = setTimeout(stepFit, 120);
+});
+// Full screen (F11) is left alone; on the way out, fit whatever changed meanwhile.
+window.matchMedia("(display-mode: fullscreen)").addEventListener("change", (e) => {
+  if (!e.matches && S.pinnedOnly) requestFit("pinned", 300);
+});
+
+// At startup, wait for the new window to settle (its title bar is added just after the page starts), then
+// learn how big that frame is and, only if what's shown has changed since last time, fit the window.
+function startFitting() {
+  if (!FIT) return;
+  let timer = null;
+  const settled = () => {
+    window.removeEventListener("resize", again);
+    fit.ready = true;
+    if (OPENED_AT && !matchMedia("(display-mode: fullscreen)").matches) {
+      const frame = [OPENED_AT[0] - innerWidth, OPENED_AT[1] - innerHeight];
+      if (frame[0] >= 0 && frame[0] <= 200 && frame[1] >= 0 && frame[1] <= 200) learnWindow({ frame });
+    }
+    if (S.pinnedOnly) requestFit("pinned", 0);
+  };
+  const again = () => { clearTimeout(timer); timer = setTimeout(settled, 250); };
+  window.addEventListener("resize", again);
+  again();
+  setTimeout(() => { if (!fit.ready) { clearTimeout(timer); settled(); } }, 2000);   // don't wait forever
+}
+
+// ---------------------------------------------------------------- start
+$("refreshIcon").outerHTML = pix([
+  "...#####.#.",
+  "..#.....##.",
+  ".#.....###.",
+  ".#.........",
+  ".#.........",
+  ".#.......#.",
+  "..#.....#..",
+  "...#####...",
+]).replace("<svg", '<svg class="glyph" style="width:22px;height:16px"');
+applyTheme(theme);
+S.show = SHOW_CHOICES.includes(INITIAL.show) ? INITIAL.show : "all";
+S.folders = Object.assign({}, INITIAL.folders || {});
+S.path = inScope(S.folders[S.show]) ? S.folders[S.show] : scopeRoot();
+$("showSel").value = S.show;
+applyShowText();
+S.favorites = INITIAL_PINS;
+for (const f of S.favorites) if (f.meta && !f.signal) S.meta[f.path] = f.meta;
+renderStatus();
+applyPinnedOnly();
+renderListing();
+connectEvents();
+startFitting();
+if (PAD) {
+  window.addEventListener("gamepadconnected", () => {
+    if (!pad.running) { pad.running = true; requestAnimationFrame(pollPad); }
+  });
+}
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawAllPixels);
+let resizeTimer = null;
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(drawAllPixels, 150); });
+</script>
+</body>
+</html>
