@@ -1,6 +1,6 @@
-# Flipper Remote
+# Steam Deck Flipper Remote
 
-Use your Flipper Zero's saved files from a Steam Deck, over Bluetooth: Sub-GHz signals (lights, ceiling fans, …),
+Use your Flipper Zero's saved files from a Steam Deck, over Bluetooth: Sub-GHz signals,
 Infrared remotes, 125 kHz RFID keys, NFC cards and iButton keys. Tap to send or emulate, hold to keep sending.
 
 It comes in two parts. Use either one, or both:
