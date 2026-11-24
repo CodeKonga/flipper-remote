@@ -55,6 +55,8 @@ same with the newer zip.
 Then press **…** in Game Mode: **Flipper Remote** is in the Decky tab. Pair from **Pair a Flipper** at the bottom
 of its panel (or in the desktop app). More in the [plugin's README](flipper-remote-decky/README.md).
 
+![The plugin in the Quick Access Menu, with five pinned buttons, Browse files, Disconnect and Pair a Flipper](screenshots/decky-plugin.png)
+
 ## Good to know
 
 - **One connection at a time.** If your phone's Flipper app is connected, the Deck can't connect (and the other
