@@ -24,14 +24,16 @@ You need [Decky Loader](https://decky.xyz) on the Steam Deck.
 ### If Decky's "Install Plugin from ZIP File" gets stuck
 
 If it stays on "Opening zip file", install it by hand instead (Decky's wiki lists copying a plugin into its plugins
-folder as a supported way). In Desktop Mode, put `install-flipper-remote-plugin.sh` next to the zip (or keep the zip
-in Downloads or Applications), and run it in Konsole:
+folder as a supported way):
 
-    ./install-flipper-remote-plugin.sh
+1. In Desktop Mode, put `install-flipper-remote-plugin.tar.gz` (from the release) in Downloads, next to the zip.
+2. In Dolphin, right-click it and choose **Extract → Extract archive here**.
+3. Right-click `install-flipper-remote-plugin.sh` and choose **Run In Konsole**.
 
 It asks for your password, copies the plugin into `~/homebrew/plugins/flipper-remote` with the same ownership Decky
-gives plugins, and restarts Decky. It ends with "FLIPPER REMOTE PLUGIN INSTALLATION SUCCESSFUL." To update the
-plugin, run it again with the newer zip: it uses the newest `flipper-remote-decky-*.zip` it finds.
+gives plugins, and restarts Decky. When it says "FLIPPER REMOTE PLUGIN INSTALLATION SUCCESSFUL.", close the
+Konsole window. The script also finds the zip in Applications, or right next to itself. To update the plugin, run it
+again with the newer zip: it uses the newest `flipper-remote-decky-*.zip` it finds.
 
 ## Sharing the Flipper with the Flipper Remote app
 

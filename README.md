@@ -24,13 +24,9 @@ Get the files from the **[latest release](https://github.com/CodeKonga/flipper-r
 
 1. In Desktop Mode, install a web browser from Discover if you don't have one (Brave, Chrome, Chromium, Edge,
    Vivaldi or Firefox). The app shows its window in it.
-2. Extract `flipper-remote-<version>.zip`.
-3. Open Konsole in the extracted `flipper-remote` folder and run:
-
-   ```
-   bash install.sh
-   ```
-
+2. In Dolphin, right-click `flipper-remote-<version>.zip` and choose **Extract → Extract archive here**.
+3. Open the extracted `flipper-remote` folder, right-click `install.sh` and choose **Run In Konsole**. When it
+   says "FLIPPER REMOTE INSTALLATION SUCCESSFUL.", close the Konsole window.
 4. Open **Flipper Remote** from the app menu (under Utilities) and tap **Pair a Flipper**. You only pair once.
 
 Installing a newer version over an older one keeps your pins and settings. More in the
@@ -47,16 +43,12 @@ the zip:
 4. Open **Developer**, and next to **Install Plugin from ZIP File** choose **Browse**. Pick the zip.
 
 **If it gets stuck on "Opening zip file":** in Desktop Mode, download `install-flipper-remote-plugin.tar.gz` into
-Downloads next to the zip, and run this in Konsole:
+Downloads, next to the zip. In Dolphin, right-click it and choose **Extract → Extract archive here**. Then
+right-click `install-flipper-remote-plugin.sh` and choose **Run In Konsole**.
 
-```
-cd ~/Downloads
-tar -xzf install-flipper-remote-plugin.tar.gz
-./install-flipper-remote-plugin.sh
-```
-
-It asks for your password, installs the newest plugin zip it finds and restarts Decky. It ends with
-"FLIPPER REMOTE PLUGIN INSTALLATION SUCCESSFUL." Run it again with a newer zip to update.
+It asks for your password, installs the newest plugin zip it finds and restarts Decky. When it says
+"FLIPPER REMOTE PLUGIN INSTALLATION SUCCESSFUL.", close the Konsole window. To update the plugin later, do the
+same with the newer zip.
 
 Then press **…** in Game Mode: **Flipper Remote** is in the Decky tab. Pair from **Pair a Flipper** at the bottom
 of its panel (or in the desktop app). More in the [plugin's README](flipper-remote-decky/README.md).

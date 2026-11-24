@@ -19,12 +19,10 @@ Works with the official firmware, Unleashed and Xtreme.
    (SteamOS doesn't ship a browser; any of these from Discover will do.) The window runs as a
    separate copy of the browser with a small profile of its own, so it opens at the right size even
    when your browser is already open, and never touches your tabs, extensions or settings.
-2. **Install Flipper Remote.** In Desktop Mode, extract the zip, open Konsole in the extracted
-   `flipper-remote` folder and run:
-
-   ```
-   bash install.sh
-   ```
+2. **Install Flipper Remote.** In Desktop Mode, right-click the zip in Dolphin and choose
+   **Extract → Extract archive here**. Open the extracted `flipper-remote` folder, right-click
+   `install.sh` and choose **Run In Konsole**. When it says "FLIPPER REMOTE INSTALLATION
+   SUCCESSFUL.", close the Konsole window.
 
    This copies the app to `~/.local/share/flipper-remote`, adds a `flipper-remote` command and a
    **Flipper Remote** entry in the app menu (under Utilities). No root, no `steamos-readonly`, and it
